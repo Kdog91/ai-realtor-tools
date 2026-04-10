@@ -9,6 +9,9 @@ from jose import jwt, JWTError
 from bson import ObjectId
 from datetime import datetime, timedelta
 import os
+import json
+import stripe
+from fastapi import Request
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,8 +23,8 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -35,8 +38,16 @@ db = mongo_client[os.getenv("DB_NAME")]
 collection = db["generations"]
 users_col = db["users"]
 
-# JWT Secret — add JWT_SECRET to your .env file!
+# JWT Secret
 JWT_SECRET = os.getenv("JWT_SECRET", "change-this-secret")
+
+# Stripe
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
+STRIPE_PRICES = {
+    "pro": "price_1TKI26Bw1uMt77JZEvFBkQNY",
+    "premium": "price_1TKI6KBw1uMt77JZjdREA2Ov"
+}
 
 # =========================
 # PLAN LIMITS
@@ -71,6 +82,44 @@ class LeadReplyRequest(BaseModel):
     property_type: str
     tone: str
 
+class ListingDescRequest(BaseModel):
+    address: str
+    bedrooms: int
+    bathrooms: float
+    sqft: int
+    price: str
+    features: str
+    tone: str = "professional"
+
+class AffordabilityRequest(BaseModel):
+    home_price: float
+    down_payment: float
+    interest_rate: float
+    loan_term: int = 30
+    annual_income: float
+    monthly_debts: float = 0
+
+class MarketSnapshotRequest(BaseModel):
+    zip_code: str
+    avg_list_price: float
+    avg_sale_price: float
+    avg_days_on_market: float
+    total_listings: int
+    sold_last_30_days: int
+    avg_price_per_sqft: float
+    months_of_inventory: float
+
+class LeadScorerRequest(BaseModel):
+    lead_name: str
+    lead_message: str
+    source: str
+    timeframe: str
+    pre_approved: bool = False
+    has_agent: bool = False
+
+class CheckoutRequest(BaseModel):
+    plan: str
+
 # =========================
 # AUTH HELPERS
 # =========================
@@ -94,17 +143,14 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 def check_and_increment_usage(user):
-    """Check if user is under their plan limit, then increment."""
     plan = user.get("plan", "free")
     limit = PLAN_LIMITS.get(plan, 5)
     current_usage = user.get("monthly_usage", 0)
-
     if current_usage >= limit:
         raise HTTPException(
             status_code=402,
             detail=f"Monthly limit of {limit} reached. Upgrade your plan to continue."
         )
-
     users_col.update_one(
         {"_id": user["_id"]},
         {"$inc": {"monthly_usage": 1}}
@@ -118,7 +164,6 @@ def check_and_increment_usage(user):
 def register(req: RegisterRequest):
     if users_col.find_one({"email": req.email}):
         raise HTTPException(status_code=400, detail="Email already registered")
-
     result = users_col.insert_one({
         "email": req.email,
         "hashed_password": pwd_context.hash(req.password),
@@ -126,7 +171,6 @@ def register(req: RegisterRequest):
         "monthly_usage": 0,
         "created_at": datetime.utcnow()
     })
-
     token = create_token(str(result.inserted_id), "free")
     return {"token": token, "plan": "free", "email": req.email}
 
@@ -135,7 +179,6 @@ def login(req: LoginRequest):
     user = users_col.find_one({"email": req.email})
     if not user or not pwd_context.verify(req.password, user["hashed_password"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-
     token = create_token(str(user["_id"]), user["plan"])
     return {
         "token": token,
@@ -147,7 +190,6 @@ def login(req: LoginRequest):
 
 @app.get("/me")
 def get_me(user=Depends(get_current_user)):
-    """Returns current user info — call this on app load to check login state."""
     return {
         "email": user["email"],
         "plan": user["plan"],
@@ -165,7 +207,6 @@ def home():
 
 @app.get("/history")
 def get_history(user=Depends(get_current_user)):
-    """Now returns only THIS user's history."""
     try:
         items = list(
             collection.find(
@@ -182,8 +223,7 @@ def get_history(user=Depends(get_current_user)):
 
 @app.post("/generate")
 def generate_content(request: ListingRequest, user=Depends(get_current_user)):
-    check_and_increment_usage(user)  # 🔒 gated
-
+    check_and_increment_usage(user)
     prompt = f"""
 You are a marketing expert for small businesses.
 
@@ -201,16 +241,13 @@ Create high-converting content:
 
 Make it modern, scroll-stopping, and conversion-focused.
 """
-
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}]
     )
-
     output = response.choices[0].message.content
-
     collection.insert_one({
-        "user_id": str(user["_id"]),          # ← ties history to user
+        "user_id": str(user["_id"]),
         "type": "marketing_content",
         "business_type": request.business_type,
         "audience": request.audience,
@@ -219,7 +256,6 @@ Make it modern, scroll-stopping, and conversion-focused.
         "result": output,
         "created_at": datetime.utcnow()
     })
-
     return {"result": output}
 
 # =========================
@@ -228,8 +264,7 @@ Make it modern, scroll-stopping, and conversion-focused.
 
 @app.post("/lead-reply")
 def generate_lead_reply(request: LeadReplyRequest, user=Depends(get_current_user)):
-    check_and_increment_usage(user)  # 🔒 gated
-
+    check_and_increment_usage(user)
     prompt = f"""
 You are a high-performing real estate agent focused on converting leads into appointments.
 
@@ -257,16 +292,13 @@ Rules:
 
 Make it feel like a top realtor texting or emailing a lead.
 """
-
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}]
     )
-
     output = response.choices[0].message.content
-
     collection.insert_one({
-        "user_id": str(user["_id"]),          # ← ties history to user
+        "user_id": str(user["_id"]),
         "type": "lead_reply",
         "lead_message": request.lead_message,
         "property_type": request.property_type,
@@ -274,25 +306,15 @@ Make it feel like a top realtor texting or emailing a lead.
         "result": output,
         "created_at": datetime.utcnow()
     })
-
     return {"result": output}
-    # =========================
+
+# =========================
 # LISTING DESCRIPTION GENERATOR
 # =========================
-
-class ListingDescRequest(BaseModel):
-    address: str
-    bedrooms: int
-    bathrooms: float
-    sqft: int
-    price: str
-    features: str
-    tone: str = "professional"
 
 @app.post("/listing-description")
 def generate_listing(request: ListingDescRequest, user=Depends(get_current_user)):
     check_and_increment_usage(user)
-
     prompt = f"""
 You are an expert real estate copywriter who writes MLS listing descriptions that sell homes fast.
 
@@ -316,14 +338,11 @@ No clichés like "must see" or "won't last long".
 
 Format clearly with "MLS VERSION:" and "MARKETING VERSION:" headers.
 """
-
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}]
     )
-
     output = response.choices[0].message.content
-
     collection.insert_one({
         "user_id": str(user["_id"]),
         "type": "listing_description",
@@ -333,44 +352,29 @@ Format clearly with "MLS VERSION:" and "MARKETING VERSION:" headers.
         "result": output,
         "created_at": datetime.utcnow()
     })
-
     return {"result": output}
-
 
 # =========================
 # AFFORDABILITY CALCULATOR
 # =========================
-
-class AffordabilityRequest(BaseModel):
-    home_price: float
-    down_payment: float
-    interest_rate: float
-    loan_term: int = 30
-    annual_income: float
-    monthly_debts: float = 0
 
 @app.post("/affordability")
 def calculate_affordability(request: AffordabilityRequest, user=Depends(get_current_user)):
     loan_amount = request.home_price - request.down_payment
     monthly_rate = (request.interest_rate / 100) / 12
     n = request.loan_term * 12
-
     if monthly_rate > 0:
         monthly_pi = loan_amount * (monthly_rate * (1 + monthly_rate)**n) / ((1 + monthly_rate)**n - 1)
     else:
         monthly_pi = loan_amount / n
-
     est_tax_insurance = (request.home_price * 0.0125) / 12
     total_monthly = monthly_pi + est_tax_insurance
     dti = ((total_monthly + request.monthly_debts) / (request.annual_income / 12)) * 100
-
     if monthly_rate > 0:
         max_home_price = ((request.annual_income / 12) * 0.28 - est_tax_insurance) / (monthly_rate * (1 + monthly_rate)**n / ((1 + monthly_rate)**n - 1)) + request.down_payment
     else:
         max_home_price = 0
-
     status = "strong" if dti < 28 else "acceptable" if dti < 36 else "tight" if dti < 43 else "over limit"
-
     return {
         "loan_amount": round(loan_amount, 2),
         "monthly_payment": round(monthly_pi, 2),
@@ -382,26 +386,14 @@ def calculate_affordability(request: AffordabilityRequest, user=Depends(get_curr
         "down_payment_pct": round((request.down_payment / request.home_price) * 100, 1)
     }
 
-    # =========================
+# =========================
 # MARKET SNAPSHOT
 # =========================
 
-class MarketSnapshotRequest(BaseModel):
-    zip_code: str
-    avg_list_price: float
-    avg_sale_price: float
-    avg_days_on_market: float
-    total_listings: int
-    sold_last_30_days: int
-    avg_price_per_sqft: float
-    months_of_inventory: float
-
 @app.post("/market-snapshot")
 def market_snapshot(request: MarketSnapshotRequest, user=Depends(get_current_user)):
-    # Pure math — no AI, no usage charge
     list_to_sale_ratio = (request.avg_sale_price / request.avg_list_price) * 100
     absorption_rate = (request.sold_last_30_days / request.total_listings) * 100 if request.total_listings > 0 else 0
-
     if request.months_of_inventory < 3:
         market_type = "Strong Seller's Market"
         market_color = "red"
@@ -414,8 +406,6 @@ def market_snapshot(request: MarketSnapshotRequest, user=Depends(get_current_use
     else:
         market_type = "Buyer's Market"
         market_color = "blue"
-
-    # AI market summary
     prompt = f"""
 You are a real estate market analyst. Write a SHORT 3-sentence market summary for a realtor to share with clients.
 
@@ -430,15 +420,12 @@ Market Data for ZIP {request.zip_code}:
 
 Write 3 sentences max. Be direct and useful. No fluff.
 """
-
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=150
     )
-
     summary = response.choices[0].message.content
-
     collection.insert_one({
         "user_id": str(user["_id"]),
         "type": "market_snapshot",
@@ -446,7 +433,6 @@ Write 3 sentences max. Be direct and useful. No fluff.
         "result": summary,
         "created_at": datetime.utcnow()
     })
-
     return {
         "zip_code": request.zip_code,
         "market_type": market_type,
@@ -464,22 +450,14 @@ Write 3 sentences max. Be direct and useful. No fluff.
             "sold_last_30_days": request.sold_last_30_days,
         }
     }
-    # =========================
+
+# =========================
 # LEAD SCORER
 # =========================
-
-class LeadScorerRequest(BaseModel):
-    lead_name: str
-    lead_message: str
-    source: str
-    timeframe: str
-    pre_approved: bool = False
-    has_agent: bool = False
 
 @app.post("/lead-score")
 def score_lead(request: LeadScorerRequest, user=Depends(get_current_user)):
     check_and_increment_usage(user)
-
     prompt = f"""
 You are an expert real estate lead conversion specialist.
 
@@ -503,22 +481,18 @@ NEXT_ACTION: [Exact first thing to do — be specific]
 FOLLOW_UP: [Best follow-up message to send this lead right now — ready to copy/paste]
 WATCH_OUT: [One red flag or thing to be careful about]
 """
-
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=400
     )
-
     output = response.choices[0].message.content
-
     lines = output.strip().split('\n')
     parsed = {}
     for line in lines:
         if ':' in line:
             key, _, value = line.partition(':')
             parsed[key.strip()] = value.strip()
-
     score = int(parsed.get("SCORE", "5"))
     temperature = parsed.get("TEMPERATURE", "Warm")
     priority = parsed.get("PRIORITY", "Medium")
@@ -526,7 +500,6 @@ WATCH_OUT: [One red flag or thing to be careful about]
     next_action = parsed.get("NEXT_ACTION", "")
     follow_up = parsed.get("FOLLOW_UP", "")
     watch_out = parsed.get("WATCH_OUT", "")
-
     collection.insert_one({
         "user_id": str(user["_id"]),
         "type": "lead_score",
@@ -536,7 +509,6 @@ WATCH_OUT: [One red flag or thing to be careful about]
         "result": output,
         "created_at": datetime.utcnow()
     })
-
     return {
         "score": score,
         "temperature": temperature,
@@ -546,21 +518,10 @@ WATCH_OUT: [One red flag or thing to be careful about]
         "follow_up": follow_up,
         "watch_out": watch_out
     }
-    # =========================
+
+# =========================
 # STRIPE PAYMENTS
 # =========================
-import stripe
-from fastapi import Request
-
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-
-STRIPE_PRICES = {
-    "pro": "price_1TKI26Bw1uMt77JZEvFBkQNY",
-    "premium": "price_1TKI6KBw1uMt77JZjdREA2Ov"
-}
-
-class CheckoutRequest(BaseModel):
-    plan: str
 
 @app.post("/create-checkout")
 def create_checkout(request: CheckoutRequest, user=Depends(get_current_user)):
@@ -573,8 +534,8 @@ def create_checkout(request: CheckoutRequest, user=Depends(get_current_user)):
                 "price": STRIPE_PRICES[request.plan],
                 "quantity": 1
             }],
-            success_url="http://localhost:5173?upgraded=true",
-            cancel_url="http://localhost:5173",
+            success_url="https://ai-realtor-tools.vercel.app?upgraded=true",
+            cancel_url="https://ai-realtor-tools.vercel.app",
             metadata={
                 "user_id": str(user["_id"]),
                 "plan": request.plan
@@ -589,20 +550,17 @@ async def stripe_webhook(request: Request):
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
     webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-
     try:
         if webhook_secret:
             event = stripe.Webhook.construct_event(
                 payload, sig_header, webhook_secret
             )
         else:
-            import json
             event = stripe.Event.construct_from(
                 json.loads(payload), stripe.api_key
             )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         user_id = session.get("metadata", {}).get("user_id")
@@ -616,7 +574,6 @@ async def stripe_webhook(request: Request):
                     "stripe_customer_id": session.get("customer")
                 }}
             )
-
     return {"status": "ok"}
 
 @app.get("/publishable-key")
