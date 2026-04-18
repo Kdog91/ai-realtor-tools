@@ -12,6 +12,7 @@ import os
 import json
 import stripe
 from dotenv import load_dotenv
+import httpx
 
 load_dotenv()
 
@@ -477,3 +478,84 @@ async def stripe_webhook(request: Request):
 def get_publishable_key(user=Depends(get_current_user)):
     return {"key": os.getenv("STRIPE_PUBLISHABLE_KEY")}
 
+# =========================
+# CENSUS NEIGHBORHOOD DATA
+# =========================
+
+class CensusRequest(BaseModel):
+    zip_code: str
+
+@app.post("/neighborhood-demographics")
+async def neighborhood_demographics(request: CensusRequest, user=Depends(get_current_user)):
+    check_and_increment_usage(user)
+    census_key = os.getenv("CENSUS_API_KEY")
+    
+    try:
+        async with httpx.AsyncClient() as http:
+            # Get demographic data from Census ACS 5-year estimates
+            url = f"https://api.census.gov/data/2022/acs/acs5?get=NAME,B19013_001E,B25077_001E,B01003_001E,B25003_002E,B25003_003E,B01002_001E,B15003_022E&for=zip%20code%20tabulation%20area:{request.zip_code}&key={census_key}"
+            response = await http.get(url)
+            data = response.json()
+            
+            if len(data) < 2:
+                raise HTTPException(status_code=404, detail="ZIP code not found")
+            
+            headers = data[0]
+            values = data[1]
+            row = dict(zip(headers, values))
+            
+            median_income = int(row.get("B19013_001E", 0) or 0)
+            median_home_value = int(row.get("B25077_001E", 0) or 0)
+            population = int(row.get("B01003_001E", 0) or 0)
+            owner_occupied = int(row.get("B25003_002E", 0) or 0)
+            renter_occupied = int(row.get("B25003_003E", 0) or 0)
+            median_age = float(row.get("B01002_001E", 0) or 0)
+            bachelors_degree = int(row.get("B15003_022E", 0) or 0)
+            
+            total_occupied = owner_occupied + renter_occupied
+            owner_pct = round((owner_occupied / total_occupied * 100), 1) if total_occupied > 0 else 0
+            renter_pct = round((renter_occupied / total_occupied * 100), 1) if total_occupied > 0 else 0
+            
+            # AI summary
+            prompt = f"""
+You are a real estate market analyst. Write a 3-sentence neighborhood summary for ZIP code {request.zip_code} based on this Census data:
+- Median Household Income: ${median_income:,}
+- Median Home Value: ${median_home_value:,}
+- Population: {population:,}
+- Owner Occupied: {owner_pct}%
+- Renter Occupied: {renter_pct}%
+- Median Age: {median_age}
+- Bachelors Degree Holders: {bachelors_degree:,}
+
+Write 3 sentences. Be direct and useful for a real estate agent sharing with clients.
+"""
+            ai_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=150
+            )
+            summary = ai_response.choices[0].message.content
+
+            collection.insert_one({
+                "user_id": str(user["_id"]),
+                "type": "neighborhood_demographics",
+                "zip_code": request.zip_code,
+                "result": summary,
+                "created_at": datetime.utcnow()
+            })
+
+            return {
+                "zip_code": request.zip_code,
+                "name": row.get("NAME", ""),
+                "median_income": median_income,
+                "median_home_value": median_home_value,
+                "population": population,
+                "owner_pct": owner_pct,
+                "renter_pct": renter_pct,
+                "median_age": median_age,
+                "summary": summary
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Census API error: {str(e)}")
