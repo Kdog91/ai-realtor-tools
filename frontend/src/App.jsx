@@ -116,6 +116,11 @@ function App() {
   const [neighborhoodResult, setNeighborhoodResult] = useState("");
   const [neighborhoodLoading, setNeighborhoodLoading] = useState(false);
 
+  // Census Demographics
+  const [censusZip, setCensusZip] = useState("");
+  const [censusResult, setCensusResult] = useState(null);
+  const [censusLoading, setCensusLoading] = useState(false);
+
   // Admin
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminStats, setAdminStats] = useState(null);
@@ -147,7 +152,6 @@ function App() {
   };
 
   const logout = () => { localStorage.clear(); setUser(null); setHistory([]); };
-
   const authHeaders = () => ({ "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` });
 
   const fetchHistory = async (token) => {
@@ -266,6 +270,16 @@ function App() {
     } catch (err) { alert(err.message); } finally { setNeighborhoodLoading(false); }
   };
 
+  const handleCensus = async () => {
+    setCensusLoading(true);
+    try {
+      const res = await fetch(`${API}/neighborhood-demographics`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ zip_code: censusZip }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail);
+      setCensusResult(data); fetchMe(localStorage.getItem("token"));
+    } catch (err) { alert(err.message); } finally { setCensusLoading(false); }
+  };
+
   const fetchAdminStats = async () => {
     try {
       const res = await fetch(`${API}/admin/stats`, { headers: authHeaders() });
@@ -300,7 +314,7 @@ function App() {
       {/* Header */}
       <div style={styles.header}>
         <h1 style={styles.title}>AI Realtor Tools 🚀</h1>
-        <p style={styles.subtitle}>13 AI-powered tools for real estate agents</p>
+        <p style={styles.subtitle}>14 AI-powered tools for real estate agents</p>
         <div style={styles.userBar}>
           <span style={styles.userInfo}>
             👤 {user.email} &nbsp;
@@ -503,7 +517,7 @@ function App() {
               <div style={{fontSize:"1.4rem", fontWeight:800, color:marketResult.market_color==="red"?"#ef4444":marketResult.market_color==="orange"?"#f97316":marketResult.market_color==="green"?"#22c55e":"#3b82f6"}}>{marketResult.market_type}</div>
               <div style={{color:"#8892a4", fontSize:"0.85rem", marginTop:4}}>ZIP {marketResult.zip_code}</div>
             </div>
-            <div style={{background:"#0f1117", borderRadius:10, padding:20, marginBottom:16}}>
+            <div style={{background:"#0f1117", borderRadius:10, padding:20}}>
               <p style={{color:"#cdd6f4", lineHeight:1.7, margin:0, fontSize:"0.9rem"}}>{marketResult.summary}</p>
               <button style={{...styles.btnSmall, marginTop:12}} onClick={() => navigator.clipboard.writeText(marketResult.summary)}>📋 Copy Summary</button>
             </div>
@@ -708,6 +722,48 @@ function App() {
         {neighborhoodResult && <div style={{marginTop:16}}><div style={styles.resultBox}>{neighborhoodResult}</div><button style={styles.btnSmall} onClick={() => navigator.clipboard.writeText(neighborhoodResult)}>📋 Copy</button></div>}
       </div>
 
+      {/* Neighborhood Demographics */}
+      <div style={styles.card}>
+        <h2 style={styles.cardTitle}>🏘️ Neighborhood Demographics</h2>
+        <p style={{color:"#8892a4", fontSize:"0.85rem", marginTop:-12, marginBottom:16}}>Pull real Census data for any ZIP code — income, home values, population and more.</p>
+        <div style={styles.row}>
+          <div style={styles.field}>
+            <label style={styles.label}>ZIP Code</label>
+            <input style={styles.input} placeholder="37201" value={censusZip} onChange={(e) => setCensusZip(e.target.value)} />
+          </div>
+        </div>
+        <div style={styles.btnRow}>
+          <button style={styles.btnPrimary} onClick={handleCensus} disabled={censusLoading}>{censusLoading ? "Loading..." : "Get Demographics"}</button>
+          <button style={styles.btnSecondary} onClick={() => { setCensusZip(""); setCensusResult(null); }}>Clear</button>
+        </div>
+        {censusResult && (
+          <div style={{marginTop:16}}>
+            <div style={{display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginBottom:16}}>
+              {[
+                {label:"Median Income", value:`$${censusResult.median_income.toLocaleString()}`, color:"#4ade80"},
+                {label:"Median Home Value", value:`$${censusResult.median_home_value.toLocaleString()}`, color:"#3b82f6"},
+                {label:"Population", value:censusResult.population.toLocaleString(), color:"#cdd6f4"},
+                {label:"Median Age", value:censusResult.median_age, color:"#cdd6f4"},
+                {label:"Owner Occupied", value:`${censusResult.owner_pct}%`, color:"#4ade80"},
+                {label:"Renter Occupied", value:`${censusResult.renter_pct}%`, color:"#f97316"},
+                {label:"ZIP Code", value:censusResult.zip_code, color:"#cdd6f4"},
+                {label:"Area", value:censusResult.name?.split(",")[0], color:"#cdd6f4"},
+              ].map((item,i) => (
+                <div key={i} style={{background:"#0f1117", borderRadius:8, padding:"12px 14px"}}>
+                  <div style={{fontSize:"0.75rem", color:"#8892a4", marginBottom:4}}>{item.label}</div>
+                  <div style={{fontSize:"1rem", fontWeight:700, color:item.color}}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{background:"#0f1117", borderRadius:10, padding:16}}>
+              <div style={{fontSize:"0.85rem", color:"#8892a4", marginBottom:8, fontWeight:600}}>AI SUMMARY</div>
+              <p style={{color:"#cdd6f4", lineHeight:1.7, margin:0, fontSize:"0.9rem"}}>{censusResult.summary}</p>
+              <button style={{...styles.btnSmall, marginTop:10}} onClick={() => navigator.clipboard.writeText(censusResult.summary)}>📋 Copy Summary</button>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Referral System */}
       <div style={styles.card}>
         <h2 style={styles.cardTitle}>🤝 Refer & Earn</h2>
@@ -737,7 +793,7 @@ function App() {
           history.map((item, i) => (
             <div key={i} style={styles.historyItem}>
               <p style={styles.historyType}>
-                {item.type === "marketing_content" ? "📣 Marketing" : item.type === "lead_reply" ? "💬 Lead Reply" : item.type === "listing_description" ? "🏠 Listing" : item.type === "lead_score" ? "🎯 Lead Score" : item.type === "objection_handler" ? "🛡️ Objection" : item.type === "drip_emails" ? "📧 Drip Emails" : item.type === "price_drop_alert" ? "📉 Price Drop" : item.type === "neighborhood_bio" ? "📍 Neighborhood" : "📋 Other"}
+                {item.type === "marketing_content" ? "📣 Marketing" : item.type === "lead_reply" ? "💬 Lead Reply" : item.type === "listing_description" ? "🏠 Listing" : item.type === "lead_score" ? "🎯 Lead Score" : item.type === "objection_handler" ? "🛡️ Objection" : item.type === "drip_emails" ? "📧 Drip Emails" : item.type === "price_drop_alert" ? "📉 Price Drop" : item.type === "neighborhood_bio" ? "📍 Neighborhood" : item.type === "neighborhood_demographics" ? "🏘️ Demographics" : "📋 Other"}
               </p>
               <p style={styles.historyResult}>{item.result?.slice(0, 150)}...</p>
               <button style={styles.btnSmall} onClick={() => navigator.clipboard.writeText(item.result)}>📋 Copy</button>
