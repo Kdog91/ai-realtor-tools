@@ -510,7 +510,7 @@ async def neighborhood_demographics(request: CensusRequest, user=Depends(get_cur
             owner_occupied = int(row.get("B25003_002E", 0) or 0)
             renter_occupied = int(row.get("B25003_003E", 0) or 0)
             median_age = float(row.get("B01002_001E", 0) or 0)
-            bachelors_degree = int(row.get("B15003_022E", 0) or 0)
+           
             
             total_occupied = owner_occupied + renter_occupied
             owner_pct = round((owner_occupied / total_occupied * 100), 1) if total_occupied > 0 else 0
