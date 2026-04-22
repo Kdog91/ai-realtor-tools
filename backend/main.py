@@ -525,7 +525,7 @@ You are a real estate market analyst. Write a 3-sentence neighborhood summary fo
 - Owner Occupied: {owner_pct}%
 - Renter Occupied: {renter_pct}%
 - Median Age: {median_age}
-- Bachelors Degree Holders: {bachelors_degree:,}
+
 
 Write 3 sentences. Be direct and useful for a real estate agent sharing with clients.
 """
