@@ -493,7 +493,7 @@ async def neighborhood_demographics(request: CensusRequest, user=Depends(get_cur
     try:
         async with httpx.AsyncClient() as http:
             # Get demographic data from Census ACS 5-year estimates
-            url = f"https://api.census.gov/data/2022/acs/acs5?get=NAME,B19013_001E,B25077_001E,B01003_001E,B25003_002E,B25003_003E,B01002_001E,B15003_022E&for=zip%20code%20tabulation%20area:{request.zip_code}&key={census_key}"
+            url = f"https://api.census.gov/data/2022/acs/acs5?get=NAME,B19013_001E,B25077_001E,B01003_001E,B25003_002E,B25003_003E,B01002_001E&for=zip+code+tabulation+area:{request.zip_code}&key={census_key}"
             response = await http.get(url)
             data = response.json()
             
