@@ -464,9 +464,8 @@ async def stripe_webhook(request: Request):
     webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "")
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret) if webhook_secret else stripe.Event.construct_from(json.loads(payload), stripe.api_key)
-except Exception as e:
-        import traceback
-        raise HTTPException(status_code=400, detail=f"Census API error: {str(e)} | {traceback.format_exc()}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         user_id = session.get("metadata", {}).get("user_id")
