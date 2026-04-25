@@ -39,10 +39,12 @@ stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
 STRIPE_PRICES = {
     "pro": "price_1TKI26Bw1uMt77JZEvFBkQNY",
-    "premium": "price_1TKI6KBw1uMt77JZjdREA2Ov"
+    "premium": "price_1TKI6KBw1uMt77JZjdREA2Ov",
+    "team_starter": "price_1TQ9emBw1uMt77JZSTAhVkTo",
+    "team_pro": "price_1TQ9hFBw1uMt77JZpoz1HzOt"
 }
 
-PLAN_LIMITS = {"free": 5, "pro": 200, "premium": 999999}
+PLAN_LIMITS = {"free": 5, "pro": 200, "premium": 999999, "team_starter": 1000, "team_pro": 999999}
 ADMIN_EMAILS = ["ks427790@gmail.com"]
 
 # =========================
@@ -224,10 +226,7 @@ def get_me(user=Depends(get_current_user)):
 def home():
     return {"message": "AI Marketing Backend Running"}
 
-@app.get("/debug-census")
-def debug_census():
-    key = os.getenv("CENSUS_API_KEY")
-    return {"key_present": key is not None, "key_preview": key[:8] if key else "MISSING"}
+
 def home():
     return {"message": "AI Marketing Backend Running"}    
 
@@ -527,3 +526,52 @@ async def neighborhood_demographics(request: CensusRequest, user=Depends(get_cur
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Census API error: {str(e)}")
+
+        # =========================
+# TEAM / BROKERAGE PLANS
+# =========================
+
+class TeamInviteRequest(BaseModel):
+    email: str
+
+class TeamAcceptRequest(BaseModel):
+    invite_code: str
+
+@app.post("/team/invite")
+def invite_team_member(request: TeamInviteRequest, user=Depends(get_current_user)):
+    if user.get("plan") not in ["team_starter", "team_pro"]:
+        raise HTTPException(status_code=403, detail="Team plans only. Upgrade to Team Starter or Team Pro.")
+    max_seats = 5 if user.get("plan") == "team_starter" else 15
+    current_members = db["teams"].count_documents({"owner_id": str(user["_id"])})
+    if current_members >= max_seats:
+        raise HTTPException(status_code=400, detail=f"Seat limit reached ({max_seats} seats max)")
+    if users_col.find_one({"email": request.email, "team_owner_id": str(user["_id"])}):
+        raise HTTPException(status_code=400, detail="Already a team member")
+    invite_code = str(user["_id"])[:8] + "-" + request.email[:4]
+    db["team_invites"].insert_one({
+        "owner_id": str(user["_id"]),
+        "owner_email": user["email"],
+        "invitee_email": request.email,
+        "invite_code": invite_code,
+        "plan": user.get("plan"),
+        "created_at": datetime.utcnow()
+    })
+    return {"message": f"Invite sent to {request.email}", "invite_code": invite_code, "invite_link": f"https://ai-realtor-tools.vercel.app?invite={invite_code}"}
+
+@app.post("/team/accept")
+def accept_team_invite(request: TeamAcceptRequest, user=Depends(get_current_user)):
+    invite = db["team_invites"].find_one({"invite_code": request.invite_code, "invitee_email": user["email"]})
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invalid invite code or email mismatch")
+    users_col.update_one({"_id": user["_id"]}, {"$set": {"team_owner_id": invite["owner_id"], "plan": invite["plan"]}})
+    db["team_invites"].delete_one({"invite_code": request.invite_code})
+    return {"message": "You joined the team successfully!"}
+
+@app.get("/team/members")
+def get_team_members(user=Depends(get_current_user)):
+    if user.get("plan") not in ["team_starter", "team_pro"]:
+        raise HTTPException(status_code=403, detail="Team plans only")
+    members = list(users_col.find({"team_owner_id": str(user["_id"])}, {"_id": 0, "email": 1, "monthly_usage": 1, "created_at": 1}))
+    max_seats = 5 if user.get("plan") == "team_starter" else 15
+    pending = list(db["team_invites"].find({"owner_id": str(user["_id"])}, {"_id": 0, "invitee_email": 1, "invite_code": 1}))
+    return {"members": members, "pending_invites": pending, "seats_used": len(members), "seats_total": max_seats}
