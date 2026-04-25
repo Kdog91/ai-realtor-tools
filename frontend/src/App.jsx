@@ -18,6 +18,7 @@ const TOOLS = [
   { id: "demographics", icon: "🏘️", label: "Demographics", color: "#6366f1" },
   { id: "referral", icon: "🤝", label: "Refer & Earn", color: "#10b981" },
   { id: "history", icon: "📋", label: "History", color: "#8b5cf6" },
+  { id: "team", icon: "👥", label: "Team Dashboard", color: "#10b981" },
 ];
 
 function AuthScreen({ onLogin }) {
@@ -104,6 +105,7 @@ function App() {
   const [censusZip, setCensusZip] = useState(""); const [censusResult, setCensusResult] = useState(null); const [censusLoading, setCensusLoading] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false); const [adminStats, setAdminStats] = useState(null);
   const [referralStats, setReferralStats] = useState(null); const [showReferral, setShowReferral] = useState(false);
+  const [teamMembers, setTeamMembers] = useState(null); const [teamInviteEmail, setTeamInviteEmail] = useState(""); const [teamLoading, setTeamLoading] = useState(false);
 
   useEffect(() => { const token = localStorage.getItem("token"); if (token) fetchMe(token); }, []);
 
@@ -150,11 +152,12 @@ function App() {
   const fetchAdminStats = async () => { try { const res = await fetch(`${API}/admin/stats`, { headers: authHeaders() }); const data = await res.json(); if (!res.ok) throw new Error(data.detail); setAdminStats(data); setShowAdmin(true); } catch { alert("Admin access only"); } };
   const fetchReferralStats = async () => { try { const res = await fetch(`${API}/referral/stats`, { headers: authHeaders() }); const data = await res.json(); setReferralStats(data); setShowReferral(true); } catch (err) { alert(err.message); } };
   const handleUpgrade = async (plan) => { try { const res = await fetch(`${API}/create-checkout`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ plan }) }); const data = await res.json(); if (!res.ok) throw new Error(data.detail); window.location.href = data.url; } catch (err) { alert(err.message); } };
+  const fetchTeamMembers = async () => { try { const res = await fetch(`${API}/team/members`, { headers: authHeaders() }); const data = await res.json(); if (!res.ok) throw new Error(data.detail); setTeamMembers(data); } catch (err) { alert(err.message); } };
+  const handleTeamInvite = async () => { setTeamLoading(true); try { const res = await fetch(`${API}/team/invite`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ email: teamInviteEmail }) }); const data = await res.json(); if (!res.ok) throw new Error(data.detail); alert(`Invite sent! Link: ${data.invite_link}`); setTeamInviteEmail(""); fetchTeamMembers(); } catch (err) { alert(err.message); } finally { setTeamLoading(false); } };
 
   if (!user) return <AuthScreen onLogin={handleLogin} />;
 
   const activeTool_ = TOOLS.find(t => t.id === activeTool);
-
   const handleToolSelect = (id) => { setActiveTool(id); setMobileMenuOpen(false); };
 
   return (
@@ -178,6 +181,7 @@ function App() {
           .grid-2 { grid-template-columns: 1fr !important; }
           .grid-4 { grid-template-columns: 1fr 1fr !important; }
           .row-flex { flex-direction: column !important; }
+          .mobile-menu-btn { display: flex !important; }
         }
       `}</style>
 
@@ -188,11 +192,10 @@ function App() {
             <div style={{ fontSize: "1.5rem" }}>🏡</div>
             <div>
               <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#fff" }}>AI Realtor Tools</div>
-              <div style={{ fontSize: "0.7rem", color: "#334155" }}>14 AI-powered tools</div>
+              <div style={{ fontSize: "0.7rem", color: "#334155" }}>15 AI-powered tools</div>
             </div>
           </div>
         </div>
-
         <div style={{ padding: "12px 8px", flex: 1 }}>
           {TOOLS.map(tool => (
             <button key={tool.id} className="tool-btn" onClick={() => handleToolSelect(tool.id)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: "none", borderRadius: 8, cursor: "pointer", marginBottom: 2, background: activeTool === tool.id ? "#1e2a3a" : "transparent", color: activeTool === tool.id ? "#fff" : "#64748b", textAlign: "left", fontSize: "0.85rem", fontWeight: activeTool === tool.id ? 600 : 400, transition: "all 0.15s", fontFamily: "'DM Sans', sans-serif" }}>
@@ -202,12 +205,11 @@ function App() {
             </button>
           ))}
         </div>
-
         <div style={{ padding: "12px 16px", borderTop: "1px solid #1e2a3a" }}>
           <div style={{ background: "#080c14", borderRadius: 10, padding: "12px", marginBottom: 8 }}>
             <div style={{ fontSize: "0.7rem", color: "#334155", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>Plan</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontWeight: 700, color: usageInfo?.plan === "premium" ? "#a78bfa" : usageInfo?.plan === "pro" ? "#60a5fa" : "#64748b", fontSize: "0.85rem" }}>{(usageInfo?.plan || "free").toUpperCase()}</span>
+              <span style={{ fontWeight: 700, color: usageInfo?.plan === "premium" || usageInfo?.plan === "team_pro" ? "#a78bfa" : usageInfo?.plan === "pro" || usageInfo?.plan === "team_starter" ? "#60a5fa" : "#64748b", fontSize: "0.85rem" }}>{(usageInfo?.plan || "free").toUpperCase().replace("_", " ")}</span>
               <span style={{ fontSize: "0.75rem", color: "#334155" }}>{usageInfo?.usage ?? 0}/{usageInfo?.limit === 999999 ? "∞" : usageInfo?.limit}</span>
             </div>
             <div style={{ height: 3, background: "#1e2a3a", borderRadius: 2 }}>
@@ -221,16 +223,13 @@ function App() {
         </div>
       </div>
 
-      {/* Mobile overlay */}
       {mobileMenuOpen && <div onClick={() => setMobileMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 199 }} />}
 
       {/* Main Content */}
       <div className="main-content" style={{ marginLeft: 240, flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-
-        {/* Top Bar */}
         <div className="top-bar" style={{ background: "#0d1117", borderBottom: "1px solid #1e2a3a", padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} style={{ display: "none", background: "none", border: "none", color: "#64748b", fontSize: "1.3rem", cursor: "pointer", padding: "4px", fontFamily: "'DM Sans', sans-serif" }} className="mobile-menu-btn">☰</button>
+            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="mobile-menu-btn" style={{ display: "none", background: "none", border: "none", color: "#64748b", fontSize: "1.3rem", cursor: "pointer", padding: "4px" }}>☰</button>
             <span style={{ fontSize: "1.2rem" }}>{activeTool_?.icon}</span>
             <div>
               <div style={{ fontWeight: 700, color: "#fff", fontSize: "1rem" }}>{activeTool_?.label}</div>
@@ -244,10 +243,8 @@ function App() {
           </div>
         </div>
 
-        {/* Content Area */}
         <div className="content-area" style={{ flex: 1, padding: "28px 32px", maxWidth: 860, width: "100%" }}>
 
-          {/* Admin Dashboard */}
           {showAdmin && adminStats && (
             <div style={{ background: "#0d1117", border: "1px solid #2d1b69", borderRadius: 16, padding: 24, marginBottom: 24 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -493,13 +490,79 @@ function App() {
             </Card>
           )}
 
+          {activeTool === "team" && (
+            <Card title="👥 Team Dashboard" subtitle="Manage your team seats and invite agents to your brokerage">
+              {(user?.plan === "team_starter" || user?.plan === "team_pro") ? (
+                <div>
+                  <div style={{ marginBottom: 20 }}>
+                    <Field label="Invite Agent by Email" full>
+                      <Input placeholder="agent@brokerage.com" value={teamInviteEmail} onChange={e => setTeamInviteEmail(e.target.value)} />
+                    </Field>
+                    <BtnRow><Btn onClick={handleTeamInvite} loading={teamLoading} label="Send Invite" /></BtnRow>
+                  </div>
+                  <Btn onClick={fetchTeamMembers} loading={false} label="Refresh Team" />
+                  {teamMembers && (
+                    <div style={{ marginTop: 20 }}>
+                      <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+                        <StatBox label="Seats Used" value={`${teamMembers.seats_used}/${teamMembers.seats_total}`} color="#4ade80" />
+                        <StatBox label="Pending Invites" value={teamMembers.pending_invites?.length || 0} color="#facc15" />
+                      </div>
+                      <div style={{ background: "#080c14", borderRadius: 10, padding: 16, border: "1px solid #1e2a3a", marginBottom: 12 }}>
+                        <div style={{ fontSize: "0.7rem", color: "#334155", marginBottom: 10, textTransform: "uppercase", fontWeight: 600 }}>Active Members</div>
+                        {teamMembers.members.length === 0 ? <p style={{ color: "#334155", fontSize: "0.85rem" }}>No members yet — send invites above!</p> :
+                          teamMembers.members.map((m, i) => (
+                            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #1e2a3a" }}>
+                              <span style={{ color: "#94a3b8", fontSize: "0.85rem" }}>{m.email}</span>
+                              <span style={{ color: "#334155", fontSize: "0.8rem" }}>{m.monthly_usage || 0} uses this month</span>
+                            </div>
+                          ))
+                        }
+                      </div>
+                      {teamMembers.pending_invites?.length > 0 && (
+                        <div style={{ background: "#080c14", borderRadius: 10, padding: 16, border: "1px solid #1e2a3a" }}>
+                          <div style={{ fontSize: "0.7rem", color: "#334155", marginBottom: 10, textTransform: "uppercase", fontWeight: 600 }}>Pending Invites</div>
+                          {teamMembers.pending_invites.map((inv, i) => (
+                            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #1e2a3a" }}>
+                              <span style={{ color: "#94a3b8", fontSize: "0.85rem" }}>{inv.invitee_email}</span>
+                              <CopyBtn value={`https://ai-realtor-tools.vercel.app?invite=${inv.invite_code}`} label="Copy Link" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ textAlign: "center", padding: "20px 0" }}>
+                  <div style={{ fontSize: "3rem", marginBottom: 16 }}>👥</div>
+                  <h3 style={{ color: "#fff", marginBottom: 8, fontWeight: 800 }}>Team Plans for Brokerages</h3>
+                  <p style={{ color: "#334155", fontSize: "0.9rem", marginBottom: 28 }}>Give your whole team access to all 15 AI tools with shared usage pools.</p>
+                  <div className="grid-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+                    <div style={{ background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 12, padding: 24, textAlign: "center" }}>
+                      <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fff", marginBottom: 6 }}>Team Starter</div>
+                      <div style={{ fontSize: "2rem", fontWeight: 800, color: "#3b82f6", marginBottom: 4 }}>$199<span style={{ fontSize: "0.9rem", color: "#334155" }}>/mo</span></div>
+                      <div style={{ color: "#334155", fontSize: "0.82rem", marginBottom: 20 }}>5 seats · 1,000 generations/mo</div>
+                      <button onClick={() => handleUpgrade("team_starter")} style={{ width: "100%", background: "linear-gradient(135deg,#3b82f6,#6366f1)", border: "none", borderRadius: 8, padding: "12px", color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>Get Team Starter</button>
+                    </div>
+                    <div style={{ background: "#080c14", border: "1px solid #6366f1", borderRadius: 12, padding: 24, textAlign: "center" }}>
+                      <div style={{ fontSize: "0.7rem", color: "#a78bfa", marginBottom: 6, textTransform: "uppercase", fontWeight: 700 }}>Most Popular</div>
+                      <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fff", marginBottom: 6 }}>Team Pro</div>
+                      <div style={{ fontSize: "2rem", fontWeight: 800, color: "#a78bfa", marginBottom: 4 }}>$499<span style={{ fontSize: "0.9rem", color: "#334155" }}>/mo</span></div>
+                      <div style={{ color: "#334155", fontSize: "0.82rem", marginBottom: 20 }}>15 seats · Unlimited generations</div>
+                      <button onClick={() => handleUpgrade("team_pro")} style={{ width: "100%", background: "linear-gradient(135deg,#7c3aed,#6366f1)", border: "none", borderRadius: 8, padding: "12px", color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>Get Team Pro</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
+
         </div>
       </div>
     </div>
   );
 }
 
-// ===== Reusable Components =====
 const Card = ({ title, subtitle, children }) => (
   <div style={{ background: "#0d1117", border: "1px solid #1e2a3a", borderRadius: 16, padding: 28 }}>
     <div style={{ marginBottom: 24 }}>
@@ -514,25 +577,12 @@ const Row = ({ children }) => <div className="row-flex" style={{ display: "flex"
 const Field = ({ label, children, full }) => <div style={{ flex: full ? "1 1 100%" : 1, display: "flex", flexDirection: "column", gap: 6, minWidth: 120 }}><label style={{ fontSize: "0.7rem", color: "#334155", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.6px" }}>{label}</label>{children}</div>;
 const BtnRow = ({ children }) => <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>{children}</div>;
 const ErrMsg = ({ children }) => <p style={{ color: "#f87171", fontSize: "0.85rem", margin: "8px 0" }}>{children}</p>;
-
 const Input = (props) => <input {...props} style={{ background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 8, padding: "11px 14px", color: "#fff", fontSize: "0.9rem", width: "100%", boxSizing: "border-box", fontFamily: "'DM Sans', sans-serif", transition: "border-color 0.15s", ...props.style }} />;
 const Textarea = (props) => <textarea {...props} style={{ background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 8, padding: "11px 14px", color: "#fff", fontSize: "0.9rem", width: "100%", minHeight: 110, resize: "vertical", boxSizing: "border-box", fontFamily: "'DM Sans', sans-serif" }} />;
 const Select = (props) => <select {...props} style={{ background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 8, padding: "11px 14px", color: "#fff", fontSize: "0.9rem", width: "100%", boxSizing: "border-box", fontFamily: "'DM Sans', sans-serif" }} />;
-
-const Btn = ({ onClick, loading, label }) => (
-  <button onClick={onClick} disabled={loading} style={{ background: loading ? "#1e2a3a" : "linear-gradient(135deg, #3b82f6, #6366f1)", color: "#fff", border: "none", borderRadius: 8, padding: "12px 24px", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", fontSize: "0.9rem", fontFamily: "'DM Sans', sans-serif", transition: "opacity 0.15s" }}>
-    {loading ? "⏳ Working..." : label}
-  </button>
-);
-
-const ClearBtn = ({ onClick }) => (
-  <button onClick={onClick} style={{ background: "transparent", color: "#334155", border: "1px solid #1e2a3a", borderRadius: 8, padding: "12px 20px", fontWeight: 500, cursor: "pointer", fontSize: "0.9rem", fontFamily: "'DM Sans', sans-serif" }}>Clear</button>
-);
-
-const CopyBtn = ({ value, label = "📋 Copy" }) => (
-  <button onClick={() => navigator.clipboard.writeText(value)} style={{ background: "#1e2a3a", color: "#94a3b8", border: "none", borderRadius: 6, padding: "7px 14px", cursor: "pointer", fontSize: "0.8rem", fontFamily: "'DM Sans', sans-serif", marginTop: 8 }}>{label}</button>
-);
-
+const Btn = ({ onClick, loading, label }) => <button onClick={onClick} disabled={loading} style={{ background: loading ? "#1e2a3a" : "linear-gradient(135deg, #3b82f6, #6366f1)", color: "#fff", border: "none", borderRadius: 8, padding: "12px 24px", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", fontSize: "0.9rem", fontFamily: "'DM Sans', sans-serif" }}>{loading ? "⏳ Working..." : label}</button>;
+const ClearBtn = ({ onClick }) => <button onClick={onClick} style={{ background: "transparent", color: "#334155", border: "1px solid #1e2a3a", borderRadius: 8, padding: "12px 20px", fontWeight: 500, cursor: "pointer", fontSize: "0.9rem", fontFamily: "'DM Sans', sans-serif" }}>Clear</button>;
+const CopyBtn = ({ value, label = "📋 Copy" }) => <button onClick={() => navigator.clipboard.writeText(value)} style={{ background: "#1e2a3a", color: "#94a3b8", border: "none", borderRadius: 6, padding: "7px 14px", cursor: "pointer", fontSize: "0.8rem", fontFamily: "'DM Sans', sans-serif", marginTop: 8 }}>{label}</button>;
 const Result = ({ value, label }) => (
   <div style={{ marginTop: 16 }}>
     {label && <div style={{ fontSize: "0.68rem", color: "#334155", fontWeight: 600, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.6px" }}>{label}</div>}
@@ -540,7 +590,6 @@ const Result = ({ value, label }) => (
     <CopyBtn value={value} />
   </div>
 );
-
 const StatBox = ({ label, value, color }) => (
   <div style={{ background: "#080c14", borderRadius: 10, padding: "12px 14px", border: "1px solid #1e2a3a" }}>
     <div style={{ fontSize: "0.65rem", color: "#334155", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.6px" }}>{label}</div>
