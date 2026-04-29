@@ -151,6 +151,19 @@ class ReferralRequest(BaseModel):
 class CensusRequest(BaseModel):
     zip_code: str
 
+class TeamInviteRequest(BaseModel):
+    email: str
+
+class TeamAcceptRequest(BaseModel):
+    invite_code: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
 # =========================
 # AUTH HELPERS
 # =========================
@@ -225,10 +238,6 @@ def get_me(user=Depends(get_current_user)):
 @app.get("/")
 def home():
     return {"message": "AI Marketing Backend Running"}
-
-
-def home():
-    return {"message": "AI Marketing Backend Running"}    
 
 @app.get("/history")
 def get_history(user=Depends(get_current_user)):
@@ -488,54 +497,29 @@ def get_publishable_key(user=Depends(get_current_user)):
     return {"key": os.getenv("STRIPE_PUBLISHABLE_KEY")}
 
 # =========================
-# CENSUS NEIGHBORHOOD DATA
+# PASSWORD RESET
 # =========================
 
-@app.post("/neighborhood-demographics")
-async def neighborhood_demographics(request: CensusRequest, user=Depends(get_current_user)):
-    check_and_increment_usage(user)
-    census_key = os.getenv("CENSUS_API_KEY")
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as http:
-            url = f"https://api.census.gov/data/2022/acs/acs5?get=NAME,B19013_001E,B25077_001E,B01003_001E,B25003_002E,B25003_003E,B01002_001E&for=zip%20code%20tabulation%20area:{request.zip_code}&key={census_key}"
-            response = await http.get(url)
-            raw = response.text
-            if not raw or raw.strip() == "":
-                raise HTTPException(status_code=400, detail="Census API returned empty response")
-            data = response.json()
-            if len(data) < 2:
-                raise HTTPException(status_code=404, detail="ZIP code not found")
-            headers = data[0]
-            values = data[1]
-            row = dict(zip(headers, values))
-            median_income = int(row.get("B19013_001E", 0) or 0)
-            median_home_value = int(row.get("B25077_001E", 0) or 0)
-            population = int(row.get("B01003_001E", 0) or 0)
-            owner_occupied = int(row.get("B25003_002E", 0) or 0)
-            renter_occupied = int(row.get("B25003_003E", 0) or 0)
-            median_age = float(row.get("B01002_001E", 0) or 0)
-            total_occupied = owner_occupied + renter_occupied
-            owner_pct = round((owner_occupied / total_occupied * 100), 1) if total_occupied > 0 else 0
-            renter_pct = round((renter_occupied / total_occupied * 100), 1) if total_occupied > 0 else 0
-            prompt = f"Real estate analyst. Write 3-sentence neighborhood summary for ZIP {request.zip_code}: Median Income ${median_income:,}, Median Home Value ${median_home_value:,}, Population {population:,}, Owner Occupied {owner_pct}%, Median Age {median_age}. Be direct and useful for a real estate agent."
-            ai_response = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}], max_tokens=150)
-            summary = ai_response.choices[0].message.content
-            collection.insert_one({"user_id": str(user["_id"]), "type": "neighborhood_demographics", "zip_code": request.zip_code, "result": summary, "created_at": datetime.utcnow()})
-            return {"zip_code": request.zip_code, "name": row.get("NAME", ""), "median_income": median_income, "median_home_value": median_home_value, "population": population, "owner_pct": owner_pct, "renter_pct": renter_pct, "median_age": median_age, "summary": summary}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Census API error: {str(e)}")
+@app.post("/forgot-password")
+def forgot_password(request: ForgotPasswordRequest):
+    user = users_col.find_one({"email": request.email})
+    if not user:
+        return {"message": "If that email exists, a reset link was sent."}
+    reset_token = str(ObjectId())
+    users_col.update_one({"_id": user["_id"]}, {"$set": {"reset_token": reset_token, "reset_token_exp": datetime.utcnow() + timedelta(hours=1)}})
+    return {"message": "If that email exists, a reset link was sent.", "reset_link": f"https://ai-realtor-tools.vercel.app?reset={reset_token}"}
 
-        # =========================
+@app.post("/reset-password")
+def reset_password(request: ResetPasswordRequest):
+    user = users_col.find_one({"reset_token": request.token, "reset_token_exp": {"$gt": datetime.utcnow()}})
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    users_col.update_one({"_id": user["_id"]}, {"$set": {"hashed_password": pwd_context.hash(request.new_password)}, "$unset": {"reset_token": "", "reset_token_exp": ""}})
+    return {"message": "Password reset successfully!"}
+
+# =========================
 # TEAM / BROKERAGE PLANS
 # =========================
-
-class TeamInviteRequest(BaseModel):
-    email: str
-
-class TeamAcceptRequest(BaseModel):
-    invite_code: str
 
 @app.post("/team/invite")
 def invite_team_member(request: TeamInviteRequest, user=Depends(get_current_user)):
@@ -575,3 +559,204 @@ def get_team_members(user=Depends(get_current_user)):
     max_seats = 5 if user.get("plan") == "team_starter" else 15
     pending = list(db["team_invites"].find({"owner_id": str(user["_id"])}, {"_id": 0, "invitee_email": 1, "invite_code": 1}))
     return {"members": members, "pending_invites": pending, "seats_used": len(members), "seats_total": max_seats}
+
+# =========================
+# CHAT WIDGET
+# =========================
+
+class ChatSetupRequest(BaseModel):
+    agent_name: str
+    agent_email: str
+    areas_served: str
+    specialties: str = ""
+    tone: str = "professional"
+
+class ChatMessageRequest(BaseModel):
+    session_id: str
+    message: str
+    agent_id: str
+
+@app.post("/chat/setup")
+def setup_chat(request: ChatSetupRequest, user=Depends(get_current_user)):
+    agent_id = str(user["_id"])
+    db["chat_agents"].update_one(
+        {"agent_id": agent_id},
+        {"$set": {
+            "agent_id": agent_id,
+            "agent_name": request.agent_name,
+            "agent_email": request.agent_email,
+            "areas_served": request.areas_served,
+            "specialties": request.specialties,
+            "tone": request.tone,
+            "updated_at": datetime.utcnow()
+        }},
+        upsert=True
+    )
+    return {"agent_id": agent_id, "widget_code": f'<script src="https://ai-realtor-tools-production.up.railway.app/widget.js?agent={agent_id}"></script>'}
+
+@app.get("/chat/setup")
+def get_chat_setup(user=Depends(get_current_user)):
+    agent_id = str(user["_id"])
+    setup = db["chat_agents"].find_one({"agent_id": agent_id}, {"_id": 0})
+    return setup or {}
+
+@app.post("/chat/message")
+async def chat_message(request: ChatMessageRequest):
+    agent = db["chat_agents"].find_one({"agent_id": request.agent_id}, {"_id": 0})
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    history = list(db["chat_sessions"].find(
+        {"session_id": request.session_id},
+        {"_id": 0, "role": 1, "content": 1}
+    ).sort("created_at", 1).limit(10))
+    messages = [
+        {"role": "system", "content": f"You are {agent['agent_name']}, a real estate agent serving {agent['areas_served']}. Specialties: {agent.get('specialties', 'general real estate')}. Tone: {agent.get('tone', 'professional')}. Answer client questions helpfully and guide them toward booking a consultation. Keep responses concise and conversational. Never make up specific property details."}
+    ]
+    for h in history:
+        messages.append({"role": h["role"], "content": h["content"]})
+    messages.append({"role": "user", "content": request.message})
+    response = client.chat.completions.create(model="gpt-4o-mini", messages=messages, max_tokens=200)
+    reply = response.choices[0].message.content
+    db["chat_sessions"].insert_many([
+        {"session_id": request.session_id, "agent_id": request.agent_id, "role": "user", "content": request.message, "created_at": datetime.utcnow()},
+        {"session_id": request.session_id, "agent_id": request.agent_id, "role": "assistant", "content": reply, "created_at": datetime.utcnow()}
+    ])
+    return {"reply": reply}
+
+@app.get("/chat/sessions")
+def get_chat_sessions(user=Depends(get_current_user)):
+    agent_id = str(user["_id"])
+    sessions = list(db["chat_sessions"].aggregate([
+        {"$match": {"agent_id": agent_id}},
+        {"$sort": {"created_at": -1}},
+        {"$group": {"_id": "$session_id", "last_message": {"$first": "$content"}, "last_time": {"$first": "$created_at"}, "count": {"$sum": 1}}},
+        {"$limit": 20}
+    ]))
+    for s in sessions:
+        s["session_id"] = s.pop("_id")
+        s["last_time"] = str(s["last_time"])
+    return {"sessions": sessions}
+
+@app.get("/widget.js")
+async def serve_widget(agent: str):
+    js = f"""
+(function() {{
+  var agentId = '{agent}';
+  var apiUrl = 'https://ai-realtor-tools-production.up.railway.app';
+  var sessionId = 'sess_' + Math.random().toString(36).substr(2, 9);
+
+  var style = document.createElement('style');
+  style.textContent = `
+    #rt-chat-btn {{ position:fixed; bottom:24px; right:24px; width:56px; height:56px; border-radius:50%; background:linear-gradient(135deg,#3b82f6,#6366f1); border:none; cursor:pointer; z-index:9999; font-size:24px; box-shadow:0 4px 20px rgba(59,130,246,0.5); }}
+    #rt-chat-box {{ position:fixed; bottom:90px; right:24px; width:340px; height:480px; background:#0d1117; border:1px solid #1e2a3a; border-radius:16px; z-index:9999; display:none; flex-direction:column; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,0.5); font-family:'DM Sans',system-ui,sans-serif; }}
+    #rt-chat-header {{ background:#161b27; padding:16px; border-bottom:1px solid #1e2a3a; color:#fff; font-weight:700; font-size:14px; }}
+    #rt-chat-msgs {{ flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }}
+    .rt-msg {{ max-width:80%; padding:10px 14px; border-radius:12px; font-size:13px; line-height:1.5; }}
+    .rt-msg.user {{ background:#3b82f6; color:#fff; align-self:flex-end; border-bottom-right-radius:4px; }}
+    .rt-msg.bot {{ background:#1e2a3a; color:#cdd6f4; align-self:flex-start; border-bottom-left-radius:4px; }}
+    #rt-chat-input {{ display:flex; padding:12px; border-top:1px solid #1e2a3a; gap:8px; }}
+    #rt-chat-input input {{ flex:1; background:#080c14; border:1px solid #1e2a3a; border-radius:8px; padding:10px 12px; color:#fff; font-size:13px; outline:none; font-family:inherit; }}
+    #rt-chat-input button {{ background:linear-gradient(135deg,#3b82f6,#6366f1); border:none; border-radius:8px; padding:10px 14px; color:#fff; cursor:pointer; font-weight:700; font-size:13px; }}
+  `;
+  document.head.appendChild(style);
+
+  var btn = document.createElement('button');
+  btn.id = 'rt-chat-btn';
+  btn.innerHTML = '💬';
+  document.body.appendChild(btn);
+
+  var box = document.createElement('div');
+  box.id = 'rt-chat-box';
+  box.innerHTML = `
+    <div id="rt-chat-header">🏡 Chat with us!</div>
+    <div id="rt-chat-msgs">
+      <div class="rt-msg bot">Hi! I'm here to help with any real estate questions. What can I help you with today?</div>
+    </div>
+    <div id="rt-chat-input">
+      <input type="text" placeholder="Type a message..." id="rt-input" />
+      <button id="rt-send">Send</button>
+    </div>
+  `;
+  document.body.appendChild(box);
+
+  btn.onclick = function() {{
+    box.style.display = box.style.display === 'flex' ? 'none' : 'flex';
+  }};
+
+  async function sendMessage() {{
+    var input = document.getElementById('rt-input');
+    var msgs = document.getElementById('rt-chat-msgs');
+    var text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    var userMsg = document.createElement('div');
+    userMsg.className = 'rt-msg user';
+    userMsg.textContent = text;
+    msgs.appendChild(userMsg);
+    msgs.scrollTop = msgs.scrollHeight;
+    var typing = document.createElement('div');
+    typing.className = 'rt-msg bot';
+    typing.textContent = '...';
+    msgs.appendChild(typing);
+    try {{
+      var res = await fetch(apiUrl + '/chat/message', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{session_id: sessionId, message: text, agent_id: agentId}})
+      }});
+      var data = await res.json();
+      typing.textContent = data.reply;
+    }} catch(e) {{
+      typing.textContent = 'Sorry, something went wrong. Please try again.';
+    }}
+    msgs.scrollTop = msgs.scrollHeight;
+  }}
+
+  document.getElementById('rt-send').onclick = sendMessage;
+  document.getElementById('rt-input').onkeydown = function(e) {{
+    if (e.key === 'Enter') sendMessage();
+  }};
+}})();
+"""
+    from fastapi.responses import Response
+    return Response(content=js, media_type="application/javascript")
+
+# =========================
+# CENSUS NEIGHBORHOOD DATA
+# =========================
+
+@app.post("/neighborhood-demographics")
+async def neighborhood_demographics(request: CensusRequest, user=Depends(get_current_user)):
+    check_and_increment_usage(user)
+    census_key = os.getenv("CENSUS_API_KEY")
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            url = f"https://api.census.gov/data/2022/acs/acs5?get=NAME,B19013_001E,B25077_001E,B01003_001E,B25003_002E,B25003_003E,B01002_001E&for=zip%20code%20tabulation%20area:{request.zip_code}&key={census_key}"
+            response = await http.get(url)
+            raw = response.text
+            if not raw or raw.strip() == "":
+                raise HTTPException(status_code=400, detail="Census API returned empty response")
+            data = response.json()
+            if len(data) < 2:
+                raise HTTPException(status_code=404, detail="ZIP code not found")
+            headers = data[0]
+            values = data[1]
+            row = dict(zip(headers, values))
+            median_income = int(row.get("B19013_001E", 0) or 0)
+            median_home_value = int(row.get("B25077_001E", 0) or 0)
+            population = int(row.get("B01003_001E", 0) or 0)
+            owner_occupied = int(row.get("B25003_002E", 0) or 0)
+            renter_occupied = int(row.get("B25003_003E", 0) or 0)
+            median_age = float(row.get("B01002_001E", 0) or 0)
+            total_occupied = owner_occupied + renter_occupied
+            owner_pct = round((owner_occupied / total_occupied * 100), 1) if total_occupied > 0 else 0
+            renter_pct = round((renter_occupied / total_occupied * 100), 1) if total_occupied > 0 else 0
+            prompt = f"Real estate analyst. Write 3-sentence neighborhood summary for ZIP {request.zip_code}: Median Income ${median_income:,}, Median Home Value ${median_home_value:,}, Population {population:,}, Owner Occupied {owner_pct}%, Median Age {median_age}. Be direct and useful for a real estate agent."
+            ai_response = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}], max_tokens=150)
+            summary = ai_response.choices[0].message.content
+            collection.insert_one({"user_id": str(user["_id"]), "type": "neighborhood_demographics", "zip_code": request.zip_code, "result": summary, "created_at": datetime.utcnow()})
+            return {"zip_code": request.zip_code, "name": row.get("NAME", ""), "median_income": median_income, "median_home_value": median_home_value, "population": population, "owner_pct": owner_pct, "renter_pct": renter_pct, "median_age": median_age, "summary": summary}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Census API error: {str(e)}")
