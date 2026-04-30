@@ -576,8 +576,8 @@ class ChatMessageRequest(BaseModel):
     message: str
     agent_id: str
 
-@app.post("/chat/setup")
-def setup_chat(request: ChatSetupRequest, user=Depends(get_current_user)):
+if user.get("plan") not in ["premium", "team_starter", "team_pro"]:
+        raise HTTPException(status_code=403, detail="Chat widget is available on Premium and Team plans only.")
     agent_id = str(user["_id"])
     db["chat_agents"].update_one(
         {"agent_id": agent_id},
@@ -593,7 +593,7 @@ def setup_chat(request: ChatSetupRequest, user=Depends(get_current_user)):
         upsert=True
     )
     return {"agent_id": agent_id, "widget_code": f'<script src="https://ai-realtor-tools-production.up.railway.app/widget.js?agent={agent_id}"></script>'}
-
+    
 @app.get("/chat/setup")
 def get_chat_setup(user=Depends(get_current_user)):
     agent_id = str(user["_id"])
