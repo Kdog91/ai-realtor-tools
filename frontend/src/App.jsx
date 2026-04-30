@@ -418,45 +418,80 @@ function App() {
 
           {activeTool === "chat-widget" && (
             <Card title="🤖 Chat Widget" subtitle="Embed an AI chat assistant on your website — clients chat, AI responds 24/7">
-              <div style={{ background: "#080c14", border: "1px solid #3b82f6", borderRadius: 12, padding: 16, marginBottom: 24 }}>
-                <div style={{ fontSize: "0.75rem", color: "#3b82f6", fontWeight: 700, marginBottom: 8, textTransform: "uppercase" }}>⚡ How it works</div>
-                <p style={{ color: "#64748b", fontSize: "0.85rem", lineHeight: 1.6 }}>Set up your profile → Get a code snippet → Paste on your website → Clients chat with your AI 24/7</p>
-              </div>
-              <Row>
-                <Field label="Your Name"><Input placeholder="Kevin Simmons" value={chatSetup.agent_name} onChange={e => setChatSetup({...chatSetup, agent_name: e.target.value})} /></Field>
-                <Field label="Your Email"><Input placeholder="kevin@realty.com" value={chatSetup.agent_email} onChange={e => setChatSetup({...chatSetup, agent_email: e.target.value})} /></Field>
-              </Row>
-              <Field label="Areas You Serve" full><Input placeholder="Nashville TN, Brentwood, Franklin..." value={chatSetup.areas_served} onChange={e => setChatSetup({...chatSetup, areas_served: e.target.value})} /></Field>
-              <Field label="Specialties (optional)" full><Input placeholder="First-time buyers, luxury homes, investment properties..." value={chatSetup.specialties} onChange={e => setChatSetup({...chatSetup, specialties: e.target.value})} /></Field>
-              <Field label="Tone" full><Select value={chatSetup.tone} onChange={e => setChatSetup({...chatSetup, tone: e.target.value})}><option value="professional">Professional</option><option value="friendly">Friendly & Warm</option><option value="luxury">Luxury / High-end</option></Select></Field>
-              <BtnRow><Btn onClick={handleChatSetup} loading={chatLoading} label="Generate Widget Code" /></BtnRow>
-              {chatWidgetCode && (
-                <div style={{ marginTop: 20 }}>
-                  <div style={{ background: "#080c14", border: "1px solid #22c55e", borderRadius: 12, padding: 16 }}>
-                    <div style={{ fontSize: "0.75rem", color: "#22c55e", fontWeight: 700, marginBottom: 8, textTransform: "uppercase" }}>✅ Your Widget Code</div>
-                    <div style={{ background: "#0d1117", borderRadius: 8, padding: 12, fontFamily: "monospace", fontSize: "0.8rem", color: "#94a3b8", wordBreak: "break-all", marginBottom: 10 }}>{chatWidgetCode}</div>
-                    <CopyBtn value={chatWidgetCode} label="📋 Copy Code" />
-                    <p style={{ color: "#64748b", fontSize: "0.8rem", marginTop: 10 }}>Paste this before the closing &lt;/body&gt; tag on your website.</p>
+              {!["premium", "team_starter", "team_pro"].includes(usageInfo?.plan) ? (
+                <div style={{ textAlign: "center", padding: "20px 0" }}>
+                  <div style={{ fontSize: "3rem", marginBottom: 16 }}>🤖</div>
+                  <h3 style={{ color: "#fff", marginBottom: 8, fontWeight: 800 }}>Premium Feature</h3>
+                  <p style={{ color: "#64748b", fontSize: "0.9rem", marginBottom: 12, lineHeight: 1.6 }}>
+                    The AI Chat Widget lets your clients get instant answers on your website 24/7 — even while you sleep.
+                  </p>
+                  <div style={{ background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 12, padding: 20, marginBottom: 24, textAlign: "left" }}>
+                    {["One line of code installs on any website", "AI responds as you, in your voice", "Never lose a lead at 2am again", "View all conversations in your dashboard", "Works on Squarespace, Wix, WordPress"].map((f, i) => (
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < 4 ? "1px solid #1e2a3a" : "none" }}>
+                        <span style={{ color: "#4ade80", fontSize: "1rem" }}>✅</span>
+                        <span style={{ color: "#94a3b8", fontSize: "0.85rem" }}>{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 16 }}>
+                    <div style={{ background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 12, padding: 24, textAlign: "center" }}>
+                      <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fff", marginBottom: 6 }}>Premium</div>
+                      <div style={{ fontSize: "2rem", fontWeight: 800, color: "#a78bfa", marginBottom: 4 }}>$99<span style={{ fontSize: "0.9rem", color: "#334155" }}>/mo</span></div>
+                      <div style={{ color: "#334155", fontSize: "0.82rem", marginBottom: 20 }}>Unlimited generations + Chat Widget</div>
+                      <button onClick={() => handleUpgrade("premium")} style={{ width: "100%", background: "linear-gradient(135deg,#7c3aed,#6366f1)", border: "none", borderRadius: 8, padding: "12px", color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>Upgrade to Premium</button>
+                    </div>
+                    <div style={{ background: "#080c14", border: "1px solid #10b981", borderRadius: 12, padding: 24, textAlign: "center" }}>
+                      <div style={{ fontSize: "0.7rem", color: "#4ade80", marginBottom: 6, textTransform: "uppercase", fontWeight: 700 }}>Best for Teams</div>
+                      <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fff", marginBottom: 6 }}>Team Starter</div>
+                      <div style={{ fontSize: "2rem", fontWeight: 800, color: "#4ade80", marginBottom: 4 }}>$199<span style={{ fontSize: "0.9rem", color: "#334155" }}>/mo</span></div>
+                      <div style={{ color: "#334155", fontSize: "0.82rem", marginBottom: 20 }}>5 seats + Chat Widget</div>
+                      <button onClick={() => handleUpgrade("team_starter")} style={{ width: "100%", background: "linear-gradient(135deg,#10b981,#059669)", border: "none", borderRadius: 8, padding: "12px", color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>Upgrade to Team</button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ background: "#080c14", border: "1px solid #3b82f6", borderRadius: 12, padding: 16, marginBottom: 24 }}>
+                    <div style={{ fontSize: "0.75rem", color: "#3b82f6", fontWeight: 700, marginBottom: 8, textTransform: "uppercase" }}>⚡ How it works</div>
+                    <p style={{ color: "#64748b", fontSize: "0.85rem", lineHeight: 1.6 }}>Set up your profile → Get a code snippet → Paste on your website → Clients chat with your AI 24/7</p>
+                  </div>
+                  <Row>
+                    <Field label="Your Name"><Input placeholder="Kevin Simmons" value={chatSetup.agent_name} onChange={e => setChatSetup({...chatSetup, agent_name: e.target.value})} /></Field>
+                    <Field label="Your Email"><Input placeholder="kevin@realty.com" value={chatSetup.agent_email} onChange={e => setChatSetup({...chatSetup, agent_email: e.target.value})} /></Field>
+                  </Row>
+                  <Field label="Areas You Serve" full><Input placeholder="Nashville TN, Brentwood, Franklin..." value={chatSetup.areas_served} onChange={e => setChatSetup({...chatSetup, areas_served: e.target.value})} /></Field>
+                  <Field label="Specialties (optional)" full><Input placeholder="First-time buyers, luxury homes, investment properties..." value={chatSetup.specialties} onChange={e => setChatSetup({...chatSetup, specialties: e.target.value})} /></Field>
+                  <Field label="Tone" full><Select value={chatSetup.tone} onChange={e => setChatSetup({...chatSetup, tone: e.target.value})}><option value="professional">Professional</option><option value="friendly">Friendly & Warm</option><option value="luxury">Luxury / High-end</option></Select></Field>
+                  <BtnRow><Btn onClick={handleChatSetup} loading={chatLoading} label="Generate Widget Code" /></BtnRow>
+                  {chatWidgetCode && (
+                    <div style={{ marginTop: 20 }}>
+                      <div style={{ background: "#080c14", border: "1px solid #22c55e", borderRadius: 12, padding: 16 }}>
+                        <div style={{ fontSize: "0.75rem", color: "#22c55e", fontWeight: 700, marginBottom: 8, textTransform: "uppercase" }}>✅ Your Widget Code</div>
+                        <div style={{ background: "#0d1117", borderRadius: 8, padding: 12, fontFamily: "monospace", fontSize: "0.8rem", color: "#94a3b8", wordBreak: "break-all", marginBottom: 10 }}>{chatWidgetCode}</div>
+                        <CopyBtn value={chatWidgetCode} label="📋 Copy Code" />
+                        <p style={{ color: "#64748b", fontSize: "0.8rem", marginTop: 10 }}>Paste this before the closing &lt;/body&gt; tag on your website.</p>
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ marginTop: 24, borderTop: "1px solid #1e2a3a", paddingTop: 20 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                      <div style={{ fontWeight: 700, color: "#fff", fontSize: "0.95rem" }}>💬 Recent Conversations</div>
+                      <Btn onClick={fetchChatSessions} loading={false} label="Refresh" />
+                    </div>
+                    {chatSessions.length === 0 ? (
+                      <p style={{ color: "#334155", fontSize: "0.85rem" }}>No conversations yet — share your widget code to start getting chats!</p>
+                    ) : chatSessions.map((s, i) => (
+                      <div key={i} style={{ background: "#080c14", borderRadius: 10, padding: 14, marginBottom: 10, border: "1px solid #1e2a3a" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                          <span style={{ color: "#3b82f6", fontSize: "0.78rem", fontWeight: 600 }}>Session {s.session_id}</span>
+                          <span style={{ color: "#334155", fontSize: "0.75rem" }}>{s.count} messages</span>
+                        </div>
+                        <div style={{ color: "#64748b", fontSize: "0.85rem" }}>{s.last_message?.slice(0, 100)}...</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
-              <div style={{ marginTop: 24, borderTop: "1px solid #1e2a3a", paddingTop: 20 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                  <div style={{ fontWeight: 700, color: "#fff", fontSize: "0.95rem" }}>💬 Recent Conversations</div>
-                  <Btn onClick={fetchChatSessions} loading={false} label="Refresh" />
-                </div>
-                {chatSessions.length === 0 ? (
-                  <p style={{ color: "#334155", fontSize: "0.85rem" }}>No conversations yet — share your widget code to start getting chats!</p>
-                ) : chatSessions.map((s, i) => (
-                  <div key={i} style={{ background: "#080c14", borderRadius: 10, padding: 14, marginBottom: 10, border: "1px solid #1e2a3a" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                      <span style={{ color: "#3b82f6", fontSize: "0.78rem", fontWeight: 600 }}>Session {s.session_id}</span>
-                      <span style={{ color: "#334155", fontSize: "0.75rem" }}>{s.count} messages</span>
-                    </div>
-                    <div style={{ color: "#64748b", fontSize: "0.85rem" }}>{s.last_message?.slice(0, 100)}...</div>
-                  </div>
-                ))}
-              </div>
             </Card>
           )}
 
