@@ -465,11 +465,56 @@ function App() {
                   <BtnRow><Btn onClick={handleChatSetup} loading={chatLoading} label="Generate Widget Code" /></BtnRow>
                   {chatWidgetCode && (
                     <div style={{ marginTop: 20 }}>
-                      <div style={{ background: "#080c14", border: "1px solid #22c55e", borderRadius: 12, padding: 16 }}>
+                      <div style={{ background: "#080c14", border: "1px solid #22c55e", borderRadius: 12, padding: 16, marginBottom: 16 }}>
                         <div style={{ fontSize: "0.75rem", color: "#22c55e", fontWeight: 700, marginBottom: 8, textTransform: "uppercase" }}>✅ Your Widget Code</div>
                         <div style={{ background: "#0d1117", borderRadius: 8, padding: 12, fontFamily: "monospace", fontSize: "0.8rem", color: "#94a3b8", wordBreak: "break-all", marginBottom: 10 }}>{chatWidgetCode}</div>
                         <CopyBtn value={chatWidgetCode} label="📋 Copy Code" />
-                        <p style={{ color: "#64748b", fontSize: "0.8rem", marginTop: 10 }}>Paste this before the closing &lt;/body&gt; tag on your website.</p>
+                      </div>
+
+                      {/* Install Instructions */}
+                      <div style={{ background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 12, padding: 16 }}>
+                        <div style={{ fontSize: "0.75rem", color: "#f59e0b", fontWeight: 700, marginBottom: 16, textTransform: "uppercase" }}>📋 How to Install on Your Website</div>
+                        {[
+                          {
+                            platform: "Squarespace",
+                            icon: "🟦",
+                            steps: ["Go to Settings", "Click Advanced", "Click Code Injection", "Paste code in the Footer box", "Click Save"]
+                          },
+                          {
+                            platform: "Wix",
+                            icon: "🟧",
+                            steps: ["Go to Settings", "Click Tracking & Analytics", "Click Add New Tool → Custom", "Paste code → Click Apply"]
+                          },
+                          {
+                            platform: "WordPress",
+                            icon: "🟩",
+                            steps: ["Go to Appearance", "Click Theme Editor", "Find footer.php", "Paste code before </body>", "Click Update File"]
+                          },
+                          {
+                            platform: "Showit",
+                            icon: "🟪",
+                            steps: ["Go to Site Settings", "Click Custom Code", "Paste in Footer Code box", "Click Publish"]
+                          },
+                          {
+                            platform: "Any Website",
+                            icon: "⬜",
+                            steps: ["Open your website's HTML editor", "Find the </body> tag at the bottom", "Paste the code right before it", "Save and publish"]
+                          }
+                        ].map((item, i) => (
+                          <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: i < 4 ? "1px solid #1e2a3a" : "none" }}>
+                            <div style={{ fontWeight: 700, color: "#fff", fontSize: "0.9rem", marginBottom: 8 }}>{item.icon} {item.platform}</div>
+                            {item.steps.map((step, j) => (
+                              <div key={j} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                                <span style={{ background: "#1e2a3a", color: "#3b82f6", borderRadius: "50%", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 700, flexShrink: 0 }}>{j + 1}</span>
+                                <span style={{ color: "#64748b", fontSize: "0.82rem" }}>{step}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                        <div style={{ background: "#1e2a3a", borderRadius: 8, padding: 12, marginTop: 8 }}>
+                          <div style={{ fontSize: "0.75rem", color: "#4ade80", fontWeight: 700, marginBottom: 6 }}>💡 Need help installing?</div>
+                          <p style={{ color: "#64748b", fontSize: "0.82rem", lineHeight: 1.6 }}>Email us at airealtortools@gmail.com and we'll install it on your website for free!</p>
+                        </div>
                       </div>
                     </div>
                   )}
