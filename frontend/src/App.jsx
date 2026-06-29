@@ -20,6 +20,7 @@ const TOOLS = [
   { id: "history", icon: "📋", label: "History", color: "#8b5cf6" },
   { id: "team", icon: "👥", label: "Team Dashboard", color: "#10b981" },
   { id: "chat-widget", icon: "🤖", label: "Chat Widget", color: "#3b82f6" },
+  { id: "zapier", icon: "⚡", label: "Zapier / CRM", color: "#f59e0b" },
 ];
 
 const isMobile = () => window.innerWidth <= 768;
@@ -118,7 +119,7 @@ function AuthScreen({ onLogin }) {
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: "3rem", marginBottom: 8 }}>🏡</div>
           <h1 style={{ margin: 0, fontSize: "2rem", fontWeight: 800, color: "#fff", letterSpacing: "-0.5px" }}>AI Realtor Tools</h1>
-          <p style={{ margin: "8px 0 0", color: "#64748b", fontSize: "0.95rem" }}>16 AI-powered tools for real estate agents</p>
+          <p style={{ margin: "8px 0 0", color: "#64748b", fontSize: "0.95rem" }}>17 AI-powered tools for real estate agents</p>
         </div>
         <div style={{ background: "#161b27", border: "1px solid #1e2a3a", borderRadius: 16, padding: 32 }}>
           <div style={{ display: "flex", background: "#0f1117", borderRadius: 10, padding: 4, marginBottom: 24 }}>
@@ -155,7 +156,6 @@ function App() {
   const [activeTool, setActiveTool] = useState("marketing");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobile, setMobile] = useState(isMobile());
-
   const [form, setForm] = useState({ business_type: "", audience: "", details: "", tone: "" });
   const [result, setResult] = useState(""); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
   const [leadForm, setLeadForm] = useState({ lead_message: "", property_type: "", tone: "" });
@@ -186,6 +186,9 @@ function App() {
   const [chatWidgetCode, setChatWidgetCode] = useState("");
   const [chatSessions, setChatSessions] = useState([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [zapierUrl, setZapierUrl] = useState("");
+  const [zapierStatus, setZapierStatus] = useState(null);
+  const [zapierLoading, setZapierLoading] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -242,6 +245,10 @@ function App() {
   const handleTeamInvite = async () => { setTeamLoading(true); try { const res = await fetch(`${API}/team/invite`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ email: teamInviteEmail }) }); const data = await res.json(); if (!res.ok) throw new Error(data.detail); alert(`Invite sent! Link: ${data.invite_link}`); setTeamInviteEmail(""); fetchTeamMembers(); } catch (err) { alert(err.message); } finally { setTeamLoading(false); } };
   const handleChatSetup = async () => { setChatLoading(true); try { const res = await fetch(`${API}/chat/setup`, { method: "POST", headers: authHeaders(), body: JSON.stringify(chatSetup) }); const data = await res.json(); if (!res.ok) throw new Error(data.detail); setChatWidgetCode(data.widget_code); } catch (err) { alert(err.message); } finally { setChatLoading(false); } };
   const fetchChatSessions = async () => { try { const res = await fetch(`${API}/chat/sessions`, { headers: authHeaders() }); const data = await res.json(); setChatSessions(data.sessions || []); } catch (err) { alert(err.message); } };
+  const fetchZapierStatus = async () => { try { const res = await fetch(`${API}/zapier/status`, { headers: authHeaders() }); const data = await res.json(); setZapierStatus(data); if (data.webhook_url) setZapierUrl(data.webhook_url); } catch {} };
+  const handleZapierConnect = async () => { setZapierLoading(true); try { const res = await fetch(`${API}/zapier/subscribe`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ webhook_url: zapierUrl }) }); const data = await res.json(); if (!res.ok) throw new Error(data.detail); alert("Zapier connected!"); fetchZapierStatus(); } catch (err) { alert(err.message); } finally { setZapierLoading(false); } };
+  const handleZapierTest = async () => { setZapierLoading(true); try { const res = await fetch(`${API}/zapier/test`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ webhook_url: zapierUrl }) }); const data = await res.json(); if (!res.ok) throw new Error(data.detail); alert("Test sent! Check your Zapier dashboard."); } catch (err) { alert(err.message); } finally { setZapierLoading(false); } };
+  const handleZapierDisconnect = async () => { try { await fetch(`${API}/zapier/unsubscribe`, { method: "DELETE", headers: authHeaders() }); setZapierStatus(null); setZapierUrl(""); alert("Zapier disconnected."); } catch (err) { alert(err.message); } };
 
   if (!user) return <AuthScreen onLogin={handleLogin} />;
 
@@ -264,14 +271,13 @@ function App() {
         select option { background: #0d1117; }
       `}</style>
 
-      {/* Sidebar */}
       <div style={{ width: sidebarW, background: "#0d1117", borderRight: "1px solid #1e2a3a", display: "flex", flexDirection: "column", position: "fixed", top: 0, left: mobile ? (mobileMenuOpen ? 0 : -sidebarW) : 0, height: "100vh", zIndex: 200, overflowY: "auto", transition: "left 0.3s ease", flexShrink: 0 }}>
         <div style={{ padding: "20px 16px", borderBottom: "1px solid #1e2a3a" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ fontSize: "1.5rem" }}>🏡</div>
             <div>
               <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#fff" }}>AI Realtor Tools</div>
-              <div style={{ fontSize: "0.7rem", color: "#334155" }}>16 AI-powered tools</div>
+              <div style={{ fontSize: "0.7rem", color: "#334155" }}>17 AI-powered tools</div>
             </div>
           </div>
         </div>
@@ -304,7 +310,6 @@ function App() {
 
       {mobile && mobileMenuOpen && <div onClick={() => setMobileMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 199 }} />}
 
-      {/* Main Content */}
       <div style={{ marginLeft: mobile ? 0 : sidebarW, flex: 1, display: "flex", flexDirection: "column", minWidth: 0, width: mobile ? "100%" : `calc(100% - ${sidebarW}px)` }}>
         <div style={{ background: "#0d1117", borderBottom: "1px solid #1e2a3a", padding: mobile ? "12px 16px" : "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -395,7 +400,7 @@ function App() {
                 <div style={{ textAlign: "center", padding: "20px 0" }}>
                   <div style={{ fontSize: "3rem", marginBottom: 16 }}>👥</div>
                   <h3 style={{ color: "#fff", marginBottom: 8, fontWeight: 800 }}>Team Plans for Brokerages</h3>
-                  <p style={{ color: "#334155", fontSize: "0.9rem", marginBottom: 28 }}>Give your whole team access to all 16 AI tools.</p>
+                  <p style={{ color: "#334155", fontSize: "0.9rem", marginBottom: 28 }}>Give your whole team access to all 17 AI tools.</p>
                   <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 16 }}>
                     <div style={{ background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 12, padding: 24, textAlign: "center" }}>
                       <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fff", marginBottom: 6 }}>Team Starter</div>
@@ -422,26 +427,15 @@ function App() {
                 <div style={{ textAlign: "center", padding: "20px 0" }}>
                   <div style={{ fontSize: "3rem", marginBottom: 16 }}>🤖</div>
                   <h3 style={{ color: "#fff", marginBottom: 8, fontWeight: 800 }}>Premium Feature</h3>
-                  <p style={{ color: "#64748b", fontSize: "0.9rem", marginBottom: 12, lineHeight: 1.6 }}>
-                    The AI Chat Widget lets your clients get instant answers on your website 24/7 — even while you sleep.
-                  </p>
-                  <div style={{ background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 12, padding: 20, marginBottom: 24, textAlign: "left" }}>
-                    {["One line of code installs on any website", "AI responds as you, in your voice", "Never lose a lead at 2am again", "View all conversations in your dashboard", "Works on Squarespace, Wix, WordPress"].map((f, i) => (
-                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < 4 ? "1px solid #1e2a3a" : "none" }}>
-                        <span style={{ color: "#4ade80", fontSize: "1rem" }}>✅</span>
-                        <span style={{ color: "#94a3b8", fontSize: "0.85rem" }}>{f}</span>
-                      </div>
-                    ))}
-                  </div>
+                  <p style={{ color: "#64748b", fontSize: "0.9rem", marginBottom: 12, lineHeight: 1.6 }}>The AI Chat Widget lets your clients get instant answers on your website 24/7.</p>
                   <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "1fr 1fr", gap: 16 }}>
                     <div style={{ background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 12, padding: 24, textAlign: "center" }}>
                       <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fff", marginBottom: 6 }}>Premium</div>
                       <div style={{ fontSize: "2rem", fontWeight: 800, color: "#a78bfa", marginBottom: 4 }}>$99<span style={{ fontSize: "0.9rem", color: "#334155" }}>/mo</span></div>
-                      <div style={{ color: "#334155", fontSize: "0.82rem", marginBottom: 20 }}>Unlimited generations + Chat Widget</div>
+                      <div style={{ color: "#334155", fontSize: "0.82rem", marginBottom: 20 }}>Unlimited + Chat Widget</div>
                       <button onClick={() => handleUpgrade("premium")} style={{ width: "100%", background: "linear-gradient(135deg,#7c3aed,#6366f1)", border: "none", borderRadius: 8, padding: "12px", color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>Upgrade to Premium</button>
                     </div>
                     <div style={{ background: "#080c14", border: "1px solid #10b981", borderRadius: 12, padding: 24, textAlign: "center" }}>
-                      <div style={{ fontSize: "0.7rem", color: "#4ade80", marginBottom: 6, textTransform: "uppercase", fontWeight: 700 }}>Best for Teams</div>
                       <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#fff", marginBottom: 6 }}>Team Starter</div>
                       <div style={{ fontSize: "2rem", fontWeight: 800, color: "#4ade80", marginBottom: 4 }}>$199<span style={{ fontSize: "0.9rem", color: "#334155" }}>/mo</span></div>
                       <div style={{ color: "#334155", fontSize: "0.82rem", marginBottom: 20 }}>5 seats + Chat Widget</div>
@@ -451,81 +445,46 @@ function App() {
                 </div>
               ) : (
                 <div>
-                  <div style={{ background: "#080c14", border: "1px solid #3b82f6", borderRadius: 12, padding: 16, marginBottom: 24 }}>
-                    <div style={{ fontSize: "0.75rem", color: "#3b82f6", fontWeight: 700, marginBottom: 8, textTransform: "uppercase" }}>⚡ How it works</div>
-                    <p style={{ color: "#64748b", fontSize: "0.85rem", lineHeight: 1.6 }}>Set up your profile → Get a code snippet → Paste on your website → Clients chat with your AI 24/7</p>
-                  </div>
                   <Row>
                     <Field label="Your Name"><Input placeholder="Kevin Simmons" value={chatSetup.agent_name} onChange={e => setChatSetup({...chatSetup, agent_name: e.target.value})} /></Field>
                     <Field label="Your Email"><Input placeholder="kevin@realty.com" value={chatSetup.agent_email} onChange={e => setChatSetup({...chatSetup, agent_email: e.target.value})} /></Field>
                   </Row>
-                  <Field label="Areas You Serve" full><Input placeholder="Nashville TN, Brentwood, Franklin..." value={chatSetup.areas_served} onChange={e => setChatSetup({...chatSetup, areas_served: e.target.value})} /></Field>
-                  <Field label="Specialties (optional)" full><Input placeholder="First-time buyers, luxury homes, investment properties..." value={chatSetup.specialties} onChange={e => setChatSetup({...chatSetup, specialties: e.target.value})} /></Field>
-                  <Field label="Tone" full><Select value={chatSetup.tone} onChange={e => setChatSetup({...chatSetup, tone: e.target.value})}><option value="professional">Professional</option><option value="friendly">Friendly & Warm</option><option value="luxury">Luxury / High-end</option></Select></Field>
+                  <Field label="Areas You Serve" full><Input placeholder="Nashville TN, Brentwood..." value={chatSetup.areas_served} onChange={e => setChatSetup({...chatSetup, areas_served: e.target.value})} /></Field>
+                  <Field label="Specialties" full><Input placeholder="First-time buyers, luxury homes..." value={chatSetup.specialties} onChange={e => setChatSetup({...chatSetup, specialties: e.target.value})} /></Field>
+                  <Field label="Tone" full><Select value={chatSetup.tone} onChange={e => setChatSetup({...chatSetup, tone: e.target.value})}><option value="professional">Professional</option><option value="friendly">Friendly & Warm</option><option value="luxury">Luxury</option></Select></Field>
                   <BtnRow><Btn onClick={handleChatSetup} loading={chatLoading} label="Generate Widget Code" /></BtnRow>
                   {chatWidgetCode && (
                     <div style={{ marginTop: 20 }}>
                       <div style={{ background: "#080c14", border: "1px solid #22c55e", borderRadius: 12, padding: 16, marginBottom: 16 }}>
-                        <div style={{ fontSize: "0.75rem", color: "#22c55e", fontWeight: 700, marginBottom: 8, textTransform: "uppercase" }}>✅ Your Widget Code</div>
+                        <div style={{ fontSize: "0.75rem", color: "#22c55e", fontWeight: 700, marginBottom: 8 }}>✅ YOUR WIDGET CODE</div>
                         <div style={{ background: "#0d1117", borderRadius: 8, padding: 12, fontFamily: "monospace", fontSize: "0.8rem", color: "#94a3b8", wordBreak: "break-all", marginBottom: 10 }}>{chatWidgetCode}</div>
                         <CopyBtn value={chatWidgetCode} label="📋 Copy Code" />
                       </div>
-
-                      {/* Install Instructions */}
                       <div style={{ background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 12, padding: 16 }}>
-                        <div style={{ fontSize: "0.75rem", color: "#f59e0b", fontWeight: 700, marginBottom: 16, textTransform: "uppercase" }}>📋 How to Install on Your Website</div>
-                        {[
-                          {
-                            platform: "Squarespace",
-                            icon: "🟦",
-                            steps: ["Go to Settings", "Click Advanced", "Click Code Injection", "Paste code in the Footer box", "Click Save"]
-                          },
-                          {
-                            platform: "Wix",
-                            icon: "🟧",
-                            steps: ["Go to Settings", "Click Tracking & Analytics", "Click Add New Tool → Custom", "Paste code → Click Apply"]
-                          },
-                          {
-                            platform: "WordPress",
-                            icon: "🟩",
-                            steps: ["Go to Appearance", "Click Theme Editor", "Find footer.php", "Paste code before </body>", "Click Update File"]
-                          },
-                          {
-                            platform: "Showit",
-                            icon: "🟪",
-                            steps: ["Go to Site Settings", "Click Custom Code", "Paste in Footer Code box", "Click Publish"]
-                          },
-                          {
-                            platform: "Any Website",
-                            icon: "⬜",
-                            steps: ["Open your website's HTML editor", "Find the </body> tag at the bottom", "Paste the code right before it", "Save and publish"]
-                          }
-                        ].map((item, i) => (
-                          <div key={i} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: i < 4 ? "1px solid #1e2a3a" : "none" }}>
-                            <div style={{ fontWeight: 700, color: "#fff", fontSize: "0.9rem", marginBottom: 8 }}>{item.icon} {item.platform}</div>
+                        <div style={{ fontSize: "0.75rem", color: "#f59e0b", fontWeight: 700, marginBottom: 16 }}>📋 HOW TO INSTALL</div>
+                        {[{platform:"Squarespace",icon:"🟦",steps:["Go to Settings","Click Advanced","Click Code Injection","Paste in Footer box","Save"]},{platform:"Wix",icon:"🟧",steps:["Go to Settings","Tracking & Analytics","Add New Tool → Custom","Paste code → Apply"]},{platform:"WordPress",icon:"🟩",steps:["Appearance → Theme Editor","Find footer.php","Paste before </body>","Update File"]},{platform:"Any Website",icon:"⬜",steps:["Open HTML editor","Find </body> tag","Paste code before it","Save and publish"]}].map((item, i) => (
+                          <div key={i} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: i < 3 ? "1px solid #1e2a3a" : "none" }}>
+                            <div style={{ fontWeight: 700, color: "#fff", fontSize: "0.88rem", marginBottom: 6 }}>{item.icon} {item.platform}</div>
                             {item.steps.map((step, j) => (
-                              <div key={j} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                                <span style={{ background: "#1e2a3a", color: "#3b82f6", borderRadius: "50%", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 700, flexShrink: 0 }}>{j + 1}</span>
-                                <span style={{ color: "#64748b", fontSize: "0.82rem" }}>{step}</span>
+                              <div key={j} style={{ display: "flex", gap: 8, marginBottom: 3 }}>
+                                <span style={{ background: "#1e2a3a", color: "#3b82f6", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.65rem", fontWeight: 700, flexShrink: 0 }}>{j+1}</span>
+                                <span style={{ color: "#64748b", fontSize: "0.8rem" }}>{step}</span>
                               </div>
                             ))}
                           </div>
                         ))}
-                        <div style={{ background: "#1e2a3a", borderRadius: 8, padding: 12, marginTop: 8 }}>
-                          <div style={{ fontSize: "0.75rem", color: "#4ade80", fontWeight: 700, marginBottom: 6 }}>💡 Need help installing?</div>
-                          <p style={{ color: "#64748b", fontSize: "0.82rem", lineHeight: 1.6 }}>Email us at airealtortools@gmail.com and we'll install it on your website for free!</p>
+                        <div style={{ background: "#1e2a3a", borderRadius: 8, padding: 10 }}>
+                          <p style={{ color: "#64748b", fontSize: "0.8rem" }}>💡 Need help? Email airealtortools@gmail.com — we'll install it free!</p>
                         </div>
                       </div>
                     </div>
                   )}
                   <div style={{ marginTop: 24, borderTop: "1px solid #1e2a3a", paddingTop: 20 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                      <div style={{ fontWeight: 700, color: "#fff", fontSize: "0.95rem" }}>💬 Recent Conversations</div>
+                      <div style={{ fontWeight: 700, color: "#fff" }}>💬 Recent Conversations</div>
                       <Btn onClick={fetchChatSessions} loading={false} label="Refresh" />
                     </div>
-                    {chatSessions.length === 0 ? (
-                      <p style={{ color: "#334155", fontSize: "0.85rem" }}>No conversations yet — share your widget code to start getting chats!</p>
-                    ) : chatSessions.map((s, i) => (
+                    {chatSessions.length === 0 ? <p style={{ color: "#334155", fontSize: "0.85rem" }}>No conversations yet!</p> : chatSessions.map((s, i) => (
                       <div key={i} style={{ background: "#080c14", borderRadius: 10, padding: 14, marginBottom: 10, border: "1px solid #1e2a3a" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                           <span style={{ color: "#3b82f6", fontSize: "0.78rem", fontWeight: 600 }}>Session {s.session_id}</span>
@@ -537,6 +496,52 @@ function App() {
                   </div>
                 </div>
               )}
+            </Card>
+          )}
+
+          {activeTool === "zapier" && (
+            <Card title="⚡ Zapier / CRM Integration" subtitle="Connect your AI generations to Follow Up Boss, HubSpot, Gmail and 5,000+ apps">
+              <div style={{ background: "#080c14", border: "1px solid #f59e0b", borderRadius: 12, padding: 16, marginBottom: 24 }}>
+                <div style={{ fontSize: "0.75rem", color: "#f59e0b", fontWeight: 700, marginBottom: 8, textTransform: "uppercase" }}>⚡ How it works</div>
+                <p style={{ color: "#64748b", fontSize: "0.85rem", lineHeight: 1.6 }}>Every time you generate content → Zapier automatically sends it to your CRM, email, Google Sheets or any app you choose.</p>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr 1fr" : "repeat(4,1fr)", gap: 10, marginBottom: 24 }}>
+                {[{name:"Follow Up Boss",icon:"🏆"},{name:"HubSpot",icon:"🟠"},{name:"Gmail",icon:"📧"},{name:"Google Sheets",icon:"📊"},{name:"Slack",icon:"💬"},{name:"Salesforce",icon:"☁️"},{name:"Mailchimp",icon:"🐒"},{name:"5,000+ more",icon:"⚡"}].map((app,i) => (
+                  <div key={i} style={{ background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 8, padding: "10px", textAlign: "center" }}>
+                    <div style={{ fontSize: "1.2rem", marginBottom: 4 }}>{app.icon}</div>
+                    <div style={{ fontSize: "0.72rem", color: "#64748b" }}>{app.name}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 12, padding: 16, marginBottom: 20 }}>
+                <div style={{ fontSize: "0.75rem", color: "#fff", fontWeight: 700, marginBottom: 12 }}>📋 Setup Instructions</div>
+                {["Go to zapier.com and create a free account","Click Create Zap → Trigger: Webhooks by Zapier → Catch Hook","Copy the webhook URL Zapier gives you","Paste it below and click Connect","Choose your Action: Follow Up Boss, Gmail, Sheets, etc","Every generation will now automatically go to your CRM!"].map((step, i) => (
+                  <div key={i} style={{ display: "flex", gap: 10, marginBottom: 8 }}>
+                    <span style={{ background: "#3b82f6", color: "#fff", borderRadius: "50%", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.7rem", fontWeight: 700, flexShrink: 0 }}>{i+1}</span>
+                    <span style={{ color: "#64748b", fontSize: "0.82rem", lineHeight: 1.5 }}>{step}</span>
+                  </div>
+                ))}
+              </div>
+              {zapierStatus?.connected && (
+                <div style={{ background: "rgba(34,197,94,0.1)", border: "1px solid #22c55e", borderRadius: 10, padding: 12, marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ color: "#4ade80", fontSize: "0.85rem", fontWeight: 700 }}>✅ Zapier Connected!</span>
+                  <button onClick={handleZapierDisconnect} style={{ background: "transparent", border: "1px solid #334155", borderRadius: 6, color: "#64748b", padding: "4px 12px", cursor: "pointer", fontSize: "0.8rem", fontFamily: "'DM Sans',sans-serif" }}>Disconnect</button>
+                </div>
+              )}
+              <Field label="Your Zapier Webhook URL" full>
+                <Input placeholder="https://hooks.zapier.com/hooks/catch/..." value={zapierUrl} onChange={e => setZapierUrl(e.target.value)} />
+              </Field>
+              <BtnRow>
+                <Btn onClick={handleZapierConnect} loading={zapierLoading} label={zapierStatus?.connected ? "Update Connection" : "Connect Zapier"} />
+                {zapierStatus?.connected && <Btn onClick={handleZapierTest} loading={zapierLoading} label="Send Test" />}
+                <Btn onClick={fetchZapierStatus} loading={false} label="Check Status" />
+              </BtnRow>
+              <div style={{ marginTop: 24, background: "#080c14", border: "1px solid #1e2a3a", borderRadius: 12, padding: 16 }}>
+                <div style={{ fontSize: "0.75rem", color: "#3b82f6", fontWeight: 700, marginBottom: 8 }}>💡 Popular Zap Ideas</div>
+                {["Listing Description → Google Docs","Lead Score → Follow Up Boss","Drip Emails → Gmail","Market Snapshot → Google Sheets","Lead Reply → Slack"].map((idea, i) => (
+                  <div key={i} style={{ color: "#64748b", fontSize: "0.82rem", padding: "6px 0", borderBottom: i < 4 ? "1px solid #1e2a3a" : "none" }}>→ {idea}</div>
+                ))}
+              </div>
             </Card>
           )}
 
